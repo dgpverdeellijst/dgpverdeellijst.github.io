@@ -295,7 +295,7 @@ BARS.forEach(b=>{
 });
 
 // ---- state ----
-const LS='dgp_verdeel_v1';
+const LS='dgp_verdeel_v2';
 let S={done:{},photos:{}};
 try{const r=localStorage.getItem(LS); if(r)S=Object.assign(S,JSON.parse(r));}catch(e){}
 function save(){try{localStorage.setItem(LS,JSON.stringify(S));}catch(e){alert('Opslag vol — verwijder een paar foto\u2019s. Afvinken blijft werken.');}}
@@ -413,7 +413,7 @@ function mapApply(){const [sc,el]=mapEls(); if(!sc||!el)return;
   el.style.setProperty('--ps',(1/mScale).toFixed(3));}
 function mapZoomAt(target,clientX,clientY){const [sc]=mapEls(); if(!sc)return;
   const r=sc.getBoundingClientRect(),cx=clientX-r.left,cy=clientY-r.top;
-  const s1=Math.min(6,Math.max(1,target)),k=s1/mScale;
+  const s1=Math.min(4,Math.max(1,target)),k=s1/mScale;
   mTx=cx-(cx-mTx)*k; mTy=cy-(cy-mTy)*k; mScale=s1; mapApply();}
 function setZoom(d){const [sc]=mapEls(); if(!sc)return; const r=sc.getBoundingClientRect();
   mapZoomAt(mScale+d*0.5, r.left+sc.clientWidth/2, r.top+sc.clientHeight/2);}
@@ -449,25 +449,36 @@ function renderMat(){
   if(!names.length){main.innerHTML='<div class="empty">Geen materiaal gevonden voor \u201C'+q+'\u201D.</div>';return;}
   main.innerHTML='<div class="hint">Kies een materiaal om alle bars te zien die het nodig hebben.</div><div class="grid">'+
     names.map(n=>{const m=idx[n];
-      let tot=0,done=0; m.bars.forEach(b=>{b.items.forEach(t=>{if(t.material===n){tot+=(+t.qty||0);if(isDone(b.loc,t.list,t.material))done+=(+t.qty||0);}});});
-      return `<button class="matrow" onclick="pickMat('${n.replace(/'/g,"\\'")}')">
-        <div><div class="matname">${n}</div><div class="matcat">${NL[m.cat]||m.cat}</div></div>
-        <div class="matqty"><b>${m.bars.length}</b> bars<br><span class="tnum">${done}/${tot} st</span></div>
+      let tot=0,done=0,doneBars=0;
+      m.bars.forEach(b=>{let bd=false;b.items.forEach(t=>{if(t.material===n){tot+=(+t.qty||0);if(isDone(b.loc,t.list,t.material)){done+=(+t.qty||0);bd=true;}}});if(bd)doneBars++;});
+      const pct=tot?Math.round(done/tot*100):0; const rem=m.bars.length-doneBars;
+      return `<button class="matrow" style="align-items:stretch" onclick="pickMat('${n.replace(/'/g,"\\'")}')">
+        <div style="flex:1;min-width:0">
+          <div class="matname">${n}</div><div class="matcat">${NL[m.cat]||m.cat}</div>
+          <div class="mini" style="margin-top:8px"><i style="width:${pct}%"></i></div></div>
+        <div class="matqty"><b class="tnum" style="font-size:16px;color:var(--ink)">${done}/${tot}</b> st<br>
+          <span class="tnum">${rem}/${m.bars.length} bars over</span></div>
       </button>`;}).join('')+'</div>';
 }
-function pickMat(n){selMat=n;render();}
+function pickMat(n){selMat=n;render();_pushOv('mat');}
 function renderMatDetail(m){
-  const bars=m.bars.filter(barMatches).slice().sort((a,b)=>locCmp(a.loc,b.loc));
+  const all=m.bars.filter(barMatches).slice().sort((a,b)=>locCmp(a.loc,b.loc));
+  const dOf=b=>{const t=b.items.find(x=>x.material===m.name);return !!(t&&isDone(b.loc,t.list,t.material));};
+  const todo=all.filter(b=>!dOf(b)), done=all.filter(dOf);
+  let tot=0,dn=0; all.forEach(b=>{const t=b.items.find(x=>x.material===m.name);tot+=+t.qty||0;if(dOf(b))dn+=+t.qty||0;});
+  const pct=tot?Math.round(dn/tot*100):0; const me=m.name.replace(/'/g,"\\'");
+  const row=b=>{const t=b.items.find(x=>x.material===m.name); const d=dOf(b);
+    return `<button class="titem ${d?'done':''}" onclick="toggleMat('${b.loc.replace(/'/g,"\\'")}','${me}')">
+      <span class="check">${d?'✓':''}</span>
+      <span class="tn" style="${d?'text-decoration:line-through;color:var(--ink-3)':''}">${b.loc}<span style="color:var(--ink-3);font-weight:500"> · ${b.meters??'?'} m</span></span>
+      <span class="qbadge tnum">${t.qty}</span></button>`;};
   main.innerHTML=`<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
-     <button class="backbtn" style="margin:0" onclick="selMat=null;render()">‹ Alle materialen</button>
-     <button class="backbtn" style="margin:0;margin-left:auto" onclick="printMat('${m.name.replace(/'/g,"\\'")}')">⬇ A4</button></div>
-    <div class="hint" style="font-size:15px;color:var(--ink)"><b>${m.name}</b> · ${NL[m.cat]||m.cat} · ${bars.length} bars</div>
-    <div class="grid">`+bars.map(b=>{
-      const t=b.items.find(x=>x.material===m.name); const d=isDone(b.loc,t.list,t.material);
-      return `<button class="titem ${d?'done':''}" onclick="toggleMat('${b.loc}','${m.name.replace(/'/g,"\\'")}')">
-        <span class="check">${d?'✓':''}</span>
-        <span class="tn">${b.loc}<span style="color:var(--ink-3);font-weight:500"> · ${b.meters??'?'} m</span></span>
-        <span class="qbadge tnum">${t.qty}</span></button>`;}).join('')+`</div>`;
+     <button class="backbtn" style="margin:0" onclick="history.back()">‹ Alle materialen</button>
+     <button class="backbtn" style="margin:0;margin-left:auto" onclick="printMat('${me}')">⬇ A4</button></div>
+    <div class="hint" style="font-size:15px;color:var(--ink);padding-bottom:6px"><b>${m.name}</b> · ${NL[m.cat]||m.cat}</div>
+    <div class="prow"><div class="top"><b>${todo.length} bars nog te doen</b><span class="tnum">${dn}/${tot} st · ${pct}%</span></div><div class="mini"><i style="width:${pct}%"></i></div></div>
+    ${todo.length?'<div class="grid">'+todo.map(row).join('')+'</div>':'<div class="empty" style="padding:20px">Alles gedaan voor dit materiaal 🎉</div>'}
+    ${done.length?'<div class="secth">Klaar ('+done.length+')</div><div class="grid">'+done.map(row).join('')+'</div>':''}`;
 }
 function toggleMat(loc,mat){const b=BARS.find(x=>x.loc===loc); const t=b.items.find(x=>x.material===mat);
   toggle(loc,t.list,t.material); render();}
@@ -548,9 +559,14 @@ function delSpecial(i){if(!confirm('Deze locatie verwijderen?'))return;S.special
 // ---- BAR SHEET ----
 let curBar=null;
 const scrim=document.getElementById('scrim'),sheet=document.getElementById('sheet'),sheetc=document.getElementById('sheetc');
+let _ov=[]; // overlay-stack zodat de telefoon-terugknop elk scherm sluit
+function _pushOv(kind){_ov.push(kind);try{history.pushState({ov:_ov.length},'');}catch(e){}}
+window.addEventListener('popstate',function(){const k=_ov.pop();
+  if(k==='bar')_closeBarNow(); else if(k==='mat'){selMat=null;render();}});
 scrim.onclick=closeBar;
-function closeBar(){sheet.classList.remove('show');scrim.classList.remove('show');curBar=null;}
-function openBar(loc){curBar=BARS.find(b=>b.loc===loc);expMat=null;paintSheet();sheet.classList.add('show');scrim.classList.add('show');}
+function closeBar(){ if(curBar) history.back(); }
+function _closeBarNow(){sheet.classList.remove('show');scrim.classList.remove('show');curBar=null;}
+function openBar(loc){curBar=BARS.find(b=>b.loc===loc);expMat=null;paintSheet();sheet.classList.add('show');scrim.classList.add('show');_pushOv('bar');}
 function paintSheet(){const b=curBar;if(!b)return;const s=barStat(b);
   const st=barStatus(b.loc);const note=statusNote(b.loc);const le=b.loc.replace(/'/g,"\\'");
   const byList={};b.items.forEach(t=>{(byList[t.list]=byList[t.list]||[]).push(t);});
