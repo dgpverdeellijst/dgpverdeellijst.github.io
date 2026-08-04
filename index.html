@@ -464,21 +464,18 @@ function pickMat(n){selMat=n;render();_pushOv('mat');}
 function renderMatDetail(m){
   const all=m.bars.filter(barMatches).slice().sort((a,b)=>locCmp(a.loc,b.loc));
   const dOf=b=>{const t=b.items.find(x=>x.material===m.name);return !!(t&&isDone(b.loc,t.list,t.material));};
-  const todo=all.filter(b=>!dOf(b)), done=all.filter(dOf);
-  let tot=0,dn=0; all.forEach(b=>{const t=b.items.find(x=>x.material===m.name);tot+=+t.qty||0;if(dOf(b))dn+=+t.qty||0;});
-  const pct=tot?Math.round(dn/tot*100):0; const me=m.name.replace(/'/g,"\\'");
-  const row=b=>{const t=b.items.find(x=>x.material===m.name); const d=dOf(b);
-    return `<button class="titem ${d?'done':''}" onclick="toggleMat('${b.loc.replace(/'/g,"\\'")}','${me}')">
-      <span class="check">${d?'✓':''}</span>
-      <span class="tn" style="${d?'text-decoration:line-through;color:var(--ink-3)':''}">${b.loc}<span style="color:var(--ink-3);font-weight:500"> · ${b.meters??'?'} m</span></span>
-      <span class="qbadge tnum">${t.qty}</span></button>`;};
+  let tot=0,dn=0,doneBars=0; all.forEach(b=>{const t=b.items.find(x=>x.material===m.name);tot+=+t.qty||0;if(dOf(b)){dn+=+t.qty||0;doneBars++;}});
+  const pct=tot?Math.round(dn/tot*100):0; const me=m.name.replace(/'/g,"\\'"); const rem=all.length-doneBars;
   main.innerHTML=`<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
      <button class="backbtn" style="margin:0" onclick="history.back()">‹ Alle materialen</button>
      <button class="backbtn" style="margin:0;margin-left:auto" onclick="printMat('${me}')">⬇ A4</button></div>
     <div class="hint" style="font-size:15px;color:var(--ink);padding-bottom:6px"><b>${m.name}</b> · ${NL[m.cat]||m.cat}</div>
-    <div class="prow"><div class="top"><b>${todo.length} bars nog te doen</b><span class="tnum">${dn}/${tot} st · ${pct}%</span></div><div class="mini"><i style="width:${pct}%"></i></div></div>
-    ${todo.length?'<div class="grid">'+todo.map(row).join('')+'</div>':'<div class="empty" style="padding:20px">Alles gedaan voor dit materiaal 🎉</div>'}
-    ${done.length?'<div class="secth">Klaar ('+done.length+')</div><div class="grid">'+done.map(row).join('')+'</div>':''}`;
+    <div class="prow"><div class="top"><b>${rem} bars nog te doen</b><span class="tnum">${dn}/${tot} st · ${pct}%</span></div><div class="mini"><i style="width:${pct}%"></i></div></div>
+    <div class="grid">`+all.map(b=>{const t=b.items.find(x=>x.material===m.name); const d=dOf(b);
+      return `<button class="titem ${d?'done':''}" onclick="toggleMat('${b.loc.replace(/'/g,"\\'")}','${me}')">
+        <span class="check">${d?'✓':''}</span>
+        <span class="tn" style="${d?'text-decoration:line-through;color:var(--ink-3)':''}">${b.loc}<span style="color:var(--ink-3);font-weight:500"> · ${b.meters??'?'} m</span></span>
+        <span class="qbadge tnum">${t.qty}</span></button>`;}).join('')+`</div>`;
 }
 function toggleMat(loc,mat){const b=BARS.find(x=>x.loc===loc); const t=b.items.find(x=>x.material===mat);
   toggle(loc,t.list,t.material); render();}
