@@ -322,7 +322,7 @@ function setMat(loc,l,m,st){S.mat=S.mat||{};const k=tkey(loc,l,m);if(st)S.mat[k]
 function matNote(loc,l,m){return (S.matnote&&S.matnote[tkey(loc,l,m)])||'';}
 let _noteTimers={};
 function setMatNote(loc,l,m,v){S.matnote=S.matnote||{};const k=tkey(loc,l,m);v=(v&&v.trim())?v:'';if(v)S.matnote[k]=v;else delete S.matnote[k];save();
-  clearTimeout(_noteTimers[k]);_noteTimers[k]=setTimeout(function(){syncNote(k,v);},700);}
+  clearTimeout(_noteTimers[k]);_noteTimers[k]=setTimeout(function(){delete _noteTimers[k];syncNote(k,v);},700);}
 function toggle(loc,l,m){setMat(loc,l,m, matStat(loc,l,m)==='g'?'':'g');}
 
 // ---- live-sync via Firebase Firestore (optioneel; valt terug op lokaal als geen config) ----
@@ -331,7 +331,7 @@ function fid(k){return (encodeURIComponent(k).replace(/[.%*/#$\[\]~()!']/g,'_').
 function _werr(e){syncBadge('schrijffout');}
 function syncMat(k,st){if(!_db)return;try{const r=_db.collection('mat').doc(fid(k));(st?r.set({k:k,v:st}):r.delete()).catch(_werr);}catch(e){_werr(e);}}
 function syncNote(k,v){if(!_db)return;try{const r=_db.collection('note').doc(fid(k));((v&&v.trim())?r.set({k:k,v:v}):r.delete()).catch(_werr);}catch(e){_werr(e);}}
-function syncClearAll(){if(!_db)return;['mat','note'].forEach(function(c){try{_db.collection(c).get().then(function(s){s.forEach(function(d){d.ref.delete();});}).catch(function(){});}catch(e){}});}
+function syncClearAll(){if(!_db)return;['mat','note'].forEach(function(c){try{_db.collection(c).get().then(function(s){s.forEach(function(d){d.ref.delete().catch(function(){});});}).catch(function(){});}catch(e){}});}
 function syncSpecial(it){if(!_db)return;try{_db.collection('special').doc(it.id).set({id:it.id,name:it.name||'',where:it.where||'',note:it.note||'',ts:it.ts||0,hasImg:!!it.hasImg}).catch(_werr);}catch(e){_werr(e);}}
 function syncSpecialDel(id){if(!_db)return;try{_db.collection('special').doc(id).delete().catch(_werr);}catch(e){_werr(e);}}
 function syncRefresh(){if(document.activeElement&&/TEXTAREA|INPUT/.test(document.activeElement.tagName))return;try{paintHeader();render();if(curBar)paintSheet();}catch(e){}}
@@ -347,7 +347,10 @@ function initSync(){try{
     // scheelt ook enorm in leesverzoeken (herladen leest uit lokale cache i.p.v. de hele lijst opnieuw).
     try{_db.enablePersistence({synchronizeTabs:true}).catch(function(){});}catch(e){}
     _db.collection('mat').onSnapshot(function(s){syncBadge('live');const m={};s.forEach(function(d){const x=d.data();if(x&&x.k)m[x.k]=x.v;});S.mat=m;save();syncRefresh();},function(e){_db=null;syncBadge('lokaal');});
-    _db.collection('note').onSnapshot(function(s){const n={};s.forEach(function(d){const x=d.data();if(x&&x.k)n[x.k]=x.v;});S.matnote=n;save();syncRefresh();},function(e){});
+    _db.collection('note').onSnapshot(function(s){const n={};s.forEach(function(d){const x=d.data();if(x&&x.k)n[x.k]=x.v;});
+      // bewaar notities die lokaal nog niet verstuurd zijn (pending debounce), zodat een snapshot ze niet wist
+      for(var k in _noteTimers){if(_noteTimers[k]){if(S.matnote&&S.matnote[k]!=null)n[k]=S.matnote[k];else delete n[k];}}
+      S.matnote=n;save();syncRefresh();},function(e){});
     _db.collection('special').onSnapshot(function(s){const arr=[];s.forEach(function(d){const x=d.data();if(x&&x.id&&/^sp_[0-9]+_[0-9]+$/.test(x.id))arr.push({id:x.id,name:x.name||'',where:x.where||'',note:x.note||'',ts:x.ts||0,hasImg:!!x.hasImg});});S.special=arr;save();syncRefresh();},function(e){});
   }catch(e){_db=null;syncBadge('lokaal');}}
 
