@@ -327,6 +327,7 @@ let _db=null;
 function fid(k){return (encodeURIComponent(k).replace(/[.%*/#$\[\]~()!']/g,'_').slice(0,320))||'x';}
 function syncMat(k,st){if(!_db)return;try{const r=_db.collection('mat').doc(fid(k));st?r.set({k:k,v:st}):r.delete();}catch(e){}}
 function syncNote(k,v){if(!_db)return;try{const r=_db.collection('note').doc(fid(k));(v&&v.trim())?r.set({k:k,v:v}):r.delete();}catch(e){}}
+function syncClearAll(){if(!_db)return;['mat','note'].forEach(function(c){try{_db.collection(c).get().then(function(s){s.forEach(function(d){d.ref.delete();});}).catch(function(){});}catch(e){}});}
 function syncRefresh(){if(document.activeElement&&/TEXTAREA|INPUT/.test(document.activeElement.tagName))return;try{paintHeader();render();if(curBar)paintSheet();}catch(e){}}
 function syncBadge(mode){const el=document.getElementById('syncbadge');if(!el)return;
   if(mode==='live'){el.textContent=' · ● live gedeeld';el.style.color='var(--groen)';}
@@ -553,7 +554,7 @@ function prow(name,done,tot,pct,sub){return `<div class="prow"><div class="top">
   <b>${name}${sub?' <span style="color:var(--ink-3);font-weight:600;font-size:11px;text-transform:uppercase">'+sub+'</span>':''}</b>
   <span class="tnum">${done}/${tot}</span></div>
   <div class="mini"><i style="width:${pct}%;background:${pct===100?'var(--klaar)':'var(--deels)'}"></i></div></div>`;}
-function resetAll(){if(confirm('Alle status (gedaan/niet compleet) wissen? Foto\u2019s blijven staan.')){S.mat={};save();render();}}
+function resetAll(){if(confirm('Alle status (gedaan/niet compleet) wissen op ALLE apparaten? Foto\u2019s blijven staan.')){S.mat={};S.matnote={};save();syncClearAll();render();}}
 
 // ---- BIJZONDERE LOCATIES ----
 let spPending=null, spDraft={where:'',note:''};
