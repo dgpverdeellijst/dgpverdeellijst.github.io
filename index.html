@@ -328,6 +328,8 @@ function fid(k){return (encodeURIComponent(k).replace(/[.%*/#$\[\]~()!']/g,'_').
 function syncMat(k,st){if(!_db)return;try{const r=_db.collection('mat').doc(fid(k));st?r.set({k:k,v:st}):r.delete();}catch(e){}}
 function syncNote(k,v){if(!_db)return;try{const r=_db.collection('note').doc(fid(k));(v&&v.trim())?r.set({k:k,v:v}):r.delete();}catch(e){}}
 function syncClearAll(){if(!_db)return;['mat','note'].forEach(function(c){try{_db.collection(c).get().then(function(s){s.forEach(function(d){d.ref.delete();});}).catch(function(){});}catch(e){}});}
+function syncSpecial(it){if(!_db)return;try{_db.collection('special').doc(it.id).set({id:it.id,name:it.name||'',where:it.where||'',note:it.note||'',ts:it.ts||0,hasImg:!!it.hasImg});}catch(e){}}
+function syncSpecialDel(id){if(!_db)return;try{_db.collection('special').doc(id).delete();}catch(e){}}
 function syncRefresh(){if(document.activeElement&&/TEXTAREA|INPUT/.test(document.activeElement.tagName))return;try{paintHeader();render();if(curBar)paintSheet();}catch(e){}}
 function syncBadge(mode){const el=document.getElementById('syncbadge');if(!el)return;
   if(mode==='live'){el.textContent=' · ● live gedeeld';el.style.color='var(--groen)';}
@@ -338,6 +340,7 @@ function initSync(){try{
     firebase.initializeApp(FB);_db=firebase.firestore();syncBadge('verbinden');
     _db.collection('mat').onSnapshot(function(s){syncBadge('live');const m={};s.forEach(function(d){const x=d.data();if(x&&x.k)m[x.k]=x.v;});S.mat=m;save();syncRefresh();},function(e){_db=null;syncBadge('lokaal');});
     _db.collection('note').onSnapshot(function(s){const n={};s.forEach(function(d){const x=d.data();if(x&&x.k)n[x.k]=x.v;});S.matnote=n;save();syncRefresh();},function(e){});
+    _db.collection('special').onSnapshot(function(s){const arr=[];s.forEach(function(d){const x=d.data();if(x&&x.id)arr.push({id:x.id,name:x.name||'',where:x.where||'',note:x.note||'',ts:x.ts||0,hasImg:!!x.hasImg});});S.special=arr;save();syncRefresh();},function(e){});
   }catch(e){_db=null;syncBadge('lokaal');}}
 
 function barStat(b){const tot=b.items.length; if(!tot)return{tot:0,done:0,nc:0,pct:100};
@@ -557,33 +560,40 @@ function prow(name,done,tot,pct,sub){return `<div class="prow"><div class="top">
 function resetAll(){if(confirm('Alle status (gedaan/niet compleet) wissen op ALLE apparaten? Foto\u2019s blijven staan.')){S.mat={};S.matnote={};save();syncClearAll();render();}}
 
 // ---- BIJZONDERE LOCATIES ----
-let spPending=null, spDraft={where:'',note:''};
-function renderSpecial(){const items=S.special||[];
+let spPending=null, spDraft={name:'',where:'',note:''};
+function renderSpecial(){const items=(S.special||[]).slice().sort((a,b)=>(b.ts||0)-(a.ts||0));S.specialImg=S.specialImg||{};
   main.innerHTML=`
-   <div class="hint">Bijzondere locaties die buiten de standaard bars vallen. Iedereen kan hier een foto, plek en notitie toevoegen.</div>
+   <div class="hint">Bijzondere locaties die buiten de standaard bars vallen. Vul je naam in, de plek en wat er is \u2014 dat wordt <b>live gedeeld</b> met iedereen. Een foto blijft op je eigen toestel.</div>
    <div class="addbox">
-     <label class="addphoto" style="width:100%;justify-content:center">\ud83d\udcf7 ${spPending?'Andere foto kiezen':'Foto maken / kiezen'}
+     <label class="addphoto" style="width:100%;justify-content:center">\ud83d\udcf7 ${spPending?'Andere foto kiezen':'Foto maken / kiezen (blijft op dit toestel)'}
        <input type="file" accept="image/*" style="display:none" onchange="spPhoto(event)"></label>
      ${spPending?`<img src="${spPending}" style="width:100%;max-height:220px;object-fit:cover;border-radius:12px;border:1px solid var(--line)">`:''}
+     <input class="noteinput" id="spname" value="${escapeHtml(spDraft.name)}" oninput="spDraft.name=this.value" placeholder="Je naam (verplicht)">
      <input class="noteinput" id="spwhere" value="${escapeHtml(spDraft.where)}" oninput="spDraft.where=this.value" placeholder="Waar is het? (bijv. B13A of \u2018hoek tribune 3\u2019)">
      <textarea class="noteinput" id="spnote" rows="2" oninput="spDraft.note=this.value" placeholder="Wat is er? / wat moet hier gebeuren">${escapeHtml(spDraft.note)}</textarea>
      <button class="bigbtn" onclick="spAdd()">+ Toevoegen aan lijst</button>
    </div>
    <div class="secth">Toegevoegd (${items.length})</div>
-   ${items.length?'<div class="grid">'+items.map((p,i)=>`
+   ${items.length?'<div class="grid">'+items.map(p=>{const img=S.specialImg[p.id];return `
      <div class="card" style="align-items:flex-start">
-       ${p.img?`<img src="${p.img}" style="width:76px;height:76px;object-fit:cover;border-radius:10px;border:1px solid var(--line);flex:none">`:''}
+       ${img?`<img src="${img}" style="width:76px;height:76px;object-fit:cover;border-radius:10px;border:1px solid var(--line);flex:none">`:(p.hasImg?`<div style="width:76px;height:76px;border-radius:10px;border:1px dashed var(--line);flex:none;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--ink-3);text-align:center;padding:4px;line-height:1.2">\ud83d\udcf7 foto op ander toestel</div>`:'')}
        <div class="grow"><div style="font-weight:800">${p.where?escapeHtml(p.where):'\u2014'}</div>
-         <div style="color:var(--ink-2);font-size:13px;margin-top:3px;white-space:pre-wrap">${p.note?escapeHtml(p.note):''}</div></div>
-       <button class="close" style="margin:0" onclick="delSpecial(${i})">\u2715</button>
-     </div>`).join('')+'</div>':'<div class="empty">Nog niks toegevoegd.</div>'}`;
+         <div style="color:var(--ink-2);font-size:13px;margin-top:3px;white-space:pre-wrap">${p.note?escapeHtml(p.note):''}</div>
+         <div style="color:var(--ink-3);font-size:12px;margin-top:5px">\u2014 ${escapeHtml(p.name||'onbekend')}</div></div>
+       <button class="close" style="margin:0" onclick="delSpecial('${p.id}')">\u2715</button>
+     </div>`;}).join('')+'</div>':'<div class="empty">Nog niks toegevoegd.</div>'}`;
 }
 function spPhoto(ev){const f=ev.target.files[0];if(!f)return;compressFile(f,d=>{if(!d){alert('Kon foto niet verwerken.');return;}spPending=d;render();});}
-function spAdd(){const where=(spDraft.where||'').trim(), note=(spDraft.note||'').trim();
-  if(!spPending&&!where&&!note){alert('Voeg minstens een foto, plek of notitie toe.');return;}
-  (S.special=S.special||[]).unshift({img:spPending,where:where,note:note,ts:Date.now()});
-  spPending=null;spDraft={where:'',note:''};save();render();}
-function delSpecial(i){if(!confirm('Deze locatie verwijderen?'))return;S.special.splice(i,1);save();render();}
+function spAdd(){const name=(spDraft.name||'').trim(), where=(spDraft.where||'').trim(), note=(spDraft.note||'').trim();
+  if(!name){alert('Vul je naam in \u2014 dat is verplicht bij een bijzonderheid.');return;}
+  if(!where&&!note){alert('Vul minstens de plek of een notitie in.');return;}
+  const id='sp_'+Date.now()+'_'+Math.floor(Math.random()*1e6);
+  const item={id:id,name:name,where:where,note:note,ts:Date.now(),hasImg:!!spPending};
+  S.special=S.special||[];S.special.unshift(item);
+  S.specialImg=S.specialImg||{};if(spPending)S.specialImg[id]=spPending;
+  spPending=null;spDraft={name:name,where:'',note:''};save();syncSpecial(item);render();}
+function delSpecial(id){if(!confirm('Deze bijzonderheid bij iedereen verwijderen?'))return;
+  S.special=(S.special||[]).filter(x=>x.id!==id);if(S.specialImg)delete S.specialImg[id];save();syncSpecialDel(id);render();}
 
 // ---- BAR SHEET ----
 let curBar=null;
