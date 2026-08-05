@@ -279,8 +279,8 @@ textarea.noteinput{resize:vertical;min-height:52px;line-height:1.4}
 <div class="sheet" id="sheet" role="dialog" aria-modal="true"><div id="sheetc"></div></div>
 <div id="printroot"></div>
 
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js" onload="window.__fbReady&&window.__fbReady()"></script>
 <script>
 /* ===== LIVE-SYNC CONFIG — plak hier de 6 waarden uit je Firebase-project (Project settings → Web-app).
    Zolang hier "PLAK" staat, werkt de app gewoon per-apparaat (geen sync). ===== */
@@ -312,35 +312,43 @@ BARS.forEach(b=>{
 const LS='dgp_verdeel_v2';
 let S={done:{},photos:{}};
 try{const r=localStorage.getItem(LS); if(r)S=Object.assign(S,JSON.parse(r));}catch(e){}
-function save(){try{localStorage.setItem(LS,JSON.stringify(S));}catch(e){alert('Opslag vol — verwijder een paar foto\u2019s. Afvinken blijft werken.');}}
+let _quotaWarned=false;
+function save(){try{localStorage.setItem(LS,JSON.stringify(S));}catch(e){if(_quotaWarned)return;_quotaWarned=true;alert('Opslag vol — verwijder een paar foto\u2019s. Afvinken blijft werken.');}}
 const tkey=(loc,l,m)=>loc+SEP+l+SEP+m;
 // per materiaal: '' = nog niet, 'g' = gedaan (groen), 'n' = niet compleet (oranje)
 function matStat(loc,l,m){return (S.mat&&S.mat[tkey(loc,l,m)])||'';}
 const isDone=(loc,l,m)=>matStat(loc,l,m)==='g';
 function setMat(loc,l,m,st){S.mat=S.mat||{};const k=tkey(loc,l,m);if(st)S.mat[k]=st;else delete S.mat[k];save();syncMat(k,st);}
 function matNote(loc,l,m){return (S.matnote&&S.matnote[tkey(loc,l,m)])||'';}
-function setMatNote(loc,l,m,v){S.matnote=S.matnote||{};const k=tkey(loc,l,m);v=(v&&v.trim())?v:'';if(v)S.matnote[k]=v;else delete S.matnote[k];save();syncNote(k,v);}
+let _noteTimers={};
+function setMatNote(loc,l,m,v){S.matnote=S.matnote||{};const k=tkey(loc,l,m);v=(v&&v.trim())?v:'';if(v)S.matnote[k]=v;else delete S.matnote[k];save();
+  clearTimeout(_noteTimers[k]);_noteTimers[k]=setTimeout(function(){syncNote(k,v);},700);}
 function toggle(loc,l,m){setMat(loc,l,m, matStat(loc,l,m)==='g'?'':'g');}
 
 // ---- live-sync via Firebase Firestore (optioneel; valt terug op lokaal als geen config) ----
 let _db=null;
 function fid(k){return (encodeURIComponent(k).replace(/[.%*/#$\[\]~()!']/g,'_').slice(0,320))||'x';}
-function syncMat(k,st){if(!_db)return;try{const r=_db.collection('mat').doc(fid(k));st?r.set({k:k,v:st}):r.delete();}catch(e){}}
-function syncNote(k,v){if(!_db)return;try{const r=_db.collection('note').doc(fid(k));(v&&v.trim())?r.set({k:k,v:v}):r.delete();}catch(e){}}
+function _werr(e){syncBadge('schrijffout');}
+function syncMat(k,st){if(!_db)return;try{const r=_db.collection('mat').doc(fid(k));(st?r.set({k:k,v:st}):r.delete()).catch(_werr);}catch(e){_werr(e);}}
+function syncNote(k,v){if(!_db)return;try{const r=_db.collection('note').doc(fid(k));((v&&v.trim())?r.set({k:k,v:v}):r.delete()).catch(_werr);}catch(e){_werr(e);}}
 function syncClearAll(){if(!_db)return;['mat','note'].forEach(function(c){try{_db.collection(c).get().then(function(s){s.forEach(function(d){d.ref.delete();});}).catch(function(){});}catch(e){}});}
-function syncSpecial(it){if(!_db)return;try{_db.collection('special').doc(it.id).set({id:it.id,name:it.name||'',where:it.where||'',note:it.note||'',ts:it.ts||0,hasImg:!!it.hasImg});}catch(e){}}
-function syncSpecialDel(id){if(!_db)return;try{_db.collection('special').doc(id).delete();}catch(e){}}
+function syncSpecial(it){if(!_db)return;try{_db.collection('special').doc(it.id).set({id:it.id,name:it.name||'',where:it.where||'',note:it.note||'',ts:it.ts||0,hasImg:!!it.hasImg}).catch(_werr);}catch(e){_werr(e);}}
+function syncSpecialDel(id){if(!_db)return;try{_db.collection('special').doc(id).delete().catch(_werr);}catch(e){_werr(e);}}
 function syncRefresh(){if(document.activeElement&&/TEXTAREA|INPUT/.test(document.activeElement.tagName))return;try{paintHeader();render();if(curBar)paintSheet();}catch(e){}}
 function syncBadge(mode){const el=document.getElementById('syncbadge');if(!el)return;
   if(mode==='live'){el.textContent=' · ● live gedeeld';el.style.color='var(--groen)';}
   else if(mode==='verbinden'){el.textContent=' · ○ verbinden…';el.style.color='var(--deels)';}
-  else{el.textContent=' · ● lokaal';el.style.color='var(--ink-3)';}}
+  else if(mode==='schrijffout'){el.textContent=' · ● niet gedeeld — check internet';el.style.color='var(--rood)';}
+  else{el.textContent=' · ● lokaal (niet gedeeld)';el.style.color='var(--ink-3)';}}
 function initSync(){try{
     if(!window.firebase||!window.FB||!FB.projectId||String(FB.projectId).indexOf('PLAK')>=0){syncBadge('lokaal');return;}
     firebase.initializeApp(FB);_db=firebase.firestore();syncBadge('verbinden');
+    // offline-persistentie: afvinken die offline gebeurt blijft bewaard en wordt bij herstel alsnog verstuurd;
+    // scheelt ook enorm in leesverzoeken (herladen leest uit lokale cache i.p.v. de hele lijst opnieuw).
+    try{_db.enablePersistence({synchronizeTabs:true}).catch(function(){});}catch(e){}
     _db.collection('mat').onSnapshot(function(s){syncBadge('live');const m={};s.forEach(function(d){const x=d.data();if(x&&x.k)m[x.k]=x.v;});S.mat=m;save();syncRefresh();},function(e){_db=null;syncBadge('lokaal');});
     _db.collection('note').onSnapshot(function(s){const n={};s.forEach(function(d){const x=d.data();if(x&&x.k)n[x.k]=x.v;});S.matnote=n;save();syncRefresh();},function(e){});
-    _db.collection('special').onSnapshot(function(s){const arr=[];s.forEach(function(d){const x=d.data();if(x&&x.id)arr.push({id:x.id,name:x.name||'',where:x.where||'',note:x.note||'',ts:x.ts||0,hasImg:!!x.hasImg});});S.special=arr;save();syncRefresh();},function(e){});
+    _db.collection('special').onSnapshot(function(s){const arr=[];s.forEach(function(d){const x=d.data();if(x&&x.id&&/^sp_[0-9]+_[0-9]+$/.test(x.id))arr.push({id:x.id,name:x.name||'',where:x.where||'',note:x.note||'',ts:x.ts||0,hasImg:!!x.hasImg});});S.special=arr;save();syncRefresh();},function(e){});
   }catch(e){_db=null;syncBadge('lokaal');}}
 
 function barStat(b){const tot=b.items.length; if(!tot)return{tot:0,done:0,nc:0,pct:100};
@@ -729,5 +737,12 @@ document.getElementById('searchwrap').style.display=NOSEARCH(view)?'none':'';
 render();
 (function(){const o=new URLSearchParams(location.search).get('open');
   if(o&&BARS.find(b=>b.loc===o))openBar(o);})();
-initSync();
+// Sync opstarten ZONDER de app te blokkeren: de UI staat er al (hierboven gerenderd).
+// Firebase laadt 'defer' op de achtergrond; we koppelen zodra hij er is, anders na ~20s lokaal.
+(function(){var booted=false,tries=0;syncBadge('verbinden');
+  function boot(){if(booted)return;if(window.firebase&&window.firebase.firestore){booted=true;initSync();}}
+  window.__fbReady=boot;
+  (function w(){if(booted)return;if(window.firebase&&window.firebase.firestore){boot();}
+    else if(tries++<80){setTimeout(w,250);}else{syncBadge('lokaal');}})();
+})();
 </script>
