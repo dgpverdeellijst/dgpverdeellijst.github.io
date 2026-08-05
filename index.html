@@ -517,14 +517,23 @@ function renderMatDetail(m){
      <button class="backbtn" style="margin:0;margin-left:auto" onclick="printMat('${me}')">⬇ A4</button></div>
     <div class="hint" style="font-size:15px;color:var(--ink);padding-bottom:6px"><b>${m.name}</b> · ${NL[m.cat]||m.cat}</div>
     <div class="prow"><div class="top"><b>${rem} bars nog te doen</b><span class="tnum">${dn}/${tot} st · ${pct}%</span></div><div class="mini"><i style="width:${pct}%"></i></div></div>
-    <div class="grid">`+all.map(b=>{const t=b.items.find(x=>x.material===m.name); const d=dOf(b);
-      return `<button class="titem ${d?'done':''}" onclick="toggleMat('${b.loc.replace(/'/g,"\\'")}','${me}')">
-        <span class="check">${d?'✓':''}</span>
-        <span class="tn" style="${d?'text-decoration:line-through;color:var(--ink-3)':''}">${b.loc}<span style="color:var(--ink-3);font-weight:500"> · ${b.meters??'?'} m</span></span>
-        <span class="qbadge tnum">${t.qty}</span></button>`;}).join('')+`</div>`;
+    <div class="grid">`+all.map(b=>{const t=b.items.find(x=>x.material===m.name);
+      const st=matStat(b.loc,t.list,m.name); const k=tkey(b.loc,t.list,m.name); const exp=expMatD===k; const mn=matNote(b.loc,t.list,m.name);
+      const le=b.loc.replace(/'/g,"\\'"), li=t.list.replace(/'/g,"\\'");
+      return `<div class="titem ${st==='g'?'done':''} ${st==='n'?'nc':''}" onclick="expandMatD('${le}','${li}','${me}')">
+        <span class="check ${st}">${st==='g'?'✓':st==='n'?'!':''}</span>
+        <span class="tn" style="flex:1;min-width:0">${b.loc}<span style="color:var(--ink-3);font-weight:500"> · ${b.meters??'?'} m</span>${st==='n'&&mn?`<div class="matnotesmall">⚠ ${escapeHtml(mn)}</div>`:''}</span>
+        <span class="qbadge tnum">${t.qty}</span></div>`+
+        (exp?`<div class="matopts">
+          <button class="stbtn groen ${st==='g'?'on':''}" onclick="chooseMatD('${le}','${li}','${me}','g')"><span class="d"></span>Gedaan</button>
+          <button class="stbtn oranje ${st==='n'?'on':''}" onclick="chooseMatD('${le}','${li}','${me}','n')"><span class="d"></span>Niet compleet</button>
+        </div>`+(st==='n'?`<textarea class="noteinput matnote" placeholder="Wat is er niet compleet? (bijv. ‘1 stuk mist’)" oninput="noteMatD('${le}','${li}','${me}',this.value)">${escapeHtml(mn)}</textarea>`:''):'');}).join('')+`</div>`;
 }
-function toggleMat(loc,mat){const b=BARS.find(x=>x.loc===loc); const t=b.items.find(x=>x.material===mat);
-  toggle(loc,t.list,t.material); render();}
+let expMatD=null;
+function expandMatD(loc,l,m){const k=tkey(loc,l,m);expMatD=(expMatD===k)?null:k;render();}
+function chooseMatD(loc,l,m,st){const nw=(matStat(loc,l,m)===st?'':st);setMat(loc,l,m,nw);
+  expMatD=(nw==='n')?tkey(loc,l,m):null;render();}
+function noteMatD(loc,l,m,v){setMatNote(loc,l,m,v);}
 
 // ---- VOORTGANG ----
 function renderProg(){
