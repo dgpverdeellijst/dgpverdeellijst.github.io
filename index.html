@@ -26,7 +26,10 @@ html,body{margin:0}
 body{background:var(--bg);color:var(--ink);
   font-family:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
   -webkit-font-smoothing:antialiased;font-size:15px;line-height:1.45;
-  min-height:100dvh;-webkit-overflow-scrolling:touch;}
+  min-height:100dvh;-webkit-overflow-scrolling:touch;
+  -webkit-user-select:none;-moz-user-select:none;user-select:none;-webkit-touch-callout:none;}
+input,textarea,[contenteditable]{-webkit-user-select:text;-moz-user-select:text;user-select:text;-webkit-touch-callout:default;}
+img{-webkit-user-drag:none;user-drag:none;}
 #app{max-width:760px;margin:0 auto;min-height:100dvh;display:flex;flex-direction:column;
   padding-bottom:calc(78px + var(--safe));}
 button{font-family:inherit;cursor:pointer;color:inherit}
@@ -617,6 +620,7 @@ function delSpecial(id){if(!confirm('Deze bijzonderheid bij iedereen verwijderen
 
 // ---- BAR SHEET ----
 let curBar=null;
+let _sheetScrollLoc=null; // welke bar hoort bij de huidige .sbody-scrollpositie (voor scroll-behoud binnen dezelfde bar)
 const scrim=document.getElementById('scrim'),sheet=document.getElementById('sheet'),sheetc=document.getElementById('sheetc');
 let _ov=[]; // overlay-stack zodat de telefoon-terugknop elk scherm sluit
 function _pushOv(kind){_ov.push(kind);try{history.pushState({ov:_ov.length},'');}catch(e){}}
@@ -624,9 +628,10 @@ window.addEventListener('popstate',function(){const k=_ov.pop();
   if(k==='bar')_closeBarNow(); else if(k==='mat'){selMat=null;render();}});
 scrim.onclick=closeBar;
 function closeBar(){ if(curBar) history.back(); }
-function _closeBarNow(){sheet.classList.remove('show');scrim.classList.remove('show');curBar=null;}
+function _closeBarNow(){sheet.classList.remove('show');scrim.classList.remove('show');curBar=null;_sheetScrollLoc=null;}
 function openBar(loc){curBar=BARS.find(b=>b.loc===loc);expMat=null;paintSheet();sheet.classList.add('show');scrim.classList.add('show');_pushOv('bar');}
 function paintSheet(){const b=curBar;if(!b)return;const s=barStat(b);
+  var _prevSb=sheetc.querySelector('.sbody'),_prevScroll=_prevSb?_prevSb.scrollTop:0; // bewaar scrollpositie zodat de lijst niet naar boven springt
   const st=barStatus(b.loc);const note=statusNote(b.loc);const le=b.loc.replace(/'/g,"\\'");
   const byList={};b.items.forEach(t=>{(byList[t.list]=byList[t.list]||[]).push(t);});
   const photos=S.photos[b.loc]||[];
@@ -663,6 +668,9 @@ function paintSheet(){const b=curBar;if(!b)return;const s=barStat(b);
          <img src="${p.img}" alt=""><div class="note">${p.note?escapeHtml(p.note):''}</div></div>`).join('')}</div>
      </div>
    </div>`;
+  var _newSb=sheetc.querySelector('.sbody');
+  if(_newSb&&_sheetScrollLoc===b.loc)_newSb.scrollTop=_prevScroll; // herstel alleen binnen DEZELFDE bar; nieuwe bar opent bovenaan
+  _sheetScrollLoc=b.loc;
 }
 function escapeHtml(s){return s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 let expMat=null;
@@ -756,5 +764,21 @@ render();
   window.__fbReady=boot;
   (function w(){if(booted)return;if(window.firebase&&window.firebase.firestore){boot();}
     else if(tries++<80){setTimeout(w,250);}else{syncBadge('lokaal');}})();
+})();
+
+// ---- kopieerbescherming: friction tegen 'zomaar' overnemen (geen harde beveiliging) ----
+(function(){
+  function inField(e){var t=e.target,n=t&&t.tagName;return n==='INPUT'||n==='TEXTAREA'||(t&&t.isContentEditable);}
+  document.addEventListener('contextmenu',function(e){if(!inField(e))e.preventDefault();});
+  document.addEventListener('copy',function(e){if(!inField(e))e.preventDefault();});
+  document.addEventListener('cut',function(e){if(!inField(e))e.preventDefault();});
+  document.addEventListener('dragstart',function(e){e.preventDefault();});
+  document.addEventListener('keydown',function(e){
+    var k=(e.key||'').toLowerCase(),c=e.ctrlKey||e.metaKey;
+    if(k==='f12'){e.preventDefault();return;}
+    if(c&&(k==='u'||k==='s')){e.preventDefault();return;}                     // view-source / pagina opslaan
+    if(c&&e.shiftKey&&(k==='i'||k==='j'||k==='c')){e.preventDefault();return;} // devtools-sneltoetsen
+    if(c&&k==='c'&&!inField(e)){e.preventDefault();}                          // kopieer buiten invoervelden
+  });
 })();
 </script>

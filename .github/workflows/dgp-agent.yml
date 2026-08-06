@@ -15,6 +15,7 @@ concurrency:
 jobs:
   agent:
     runs-on: ubuntu-latest
+    timeout-minutes: 8            # nooit langer dan 8 min blijven hangen bij netwerk/infra-storing
     steps:
       - uses: actions/checkout@v4
         with:
