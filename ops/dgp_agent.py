@@ -125,13 +125,52 @@ def repo_bars():
     data = json.loads(re.search(r"window\.BARS\s*=\s*(\[.*\]);", h[i0:i1], re.S).group(1))
     return h, i0, i1, data
 
+def js_broken(path="index.html"):
+    """Lege string = OK. Anders reden: JS-syntaxfout of window.BARS parse-t niet."""
+    try:
+        h = open(path, encoding="utf-8").read()
+        scripts = re.findall(r"<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>", h, re.S)
+        open("/tmp/_chk.js", "w").write("\n;\n".join(scripts))
+        if subprocess.run(["node", "--check", "/tmp/_chk.js"], capture_output=True).returncode != 0:
+            return "JS-syntaxfout"
+        i0 = h.find("window.BARS"); i1 = h.find("const MAPIMG", i0)
+        json.loads(re.search(r"window\.BARS\s*=\s*(\[.*\]);", h[i0:i1], re.S).group(1))
+        return ""
+    except Exception as e:
+        return f"data kapot ({e})"
+
 def write_bars(h, i0, i1, data, msg):
     DATA = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
     open("index.html", "w", encoding="utf-8").write(h[:i0] + "window.BARS = " + DATA + ";\n" + h[i1:])
+    bad = js_broken()                         # nooit een kapotte versie pushen
+    if bad:
+        subprocess.run(["git", "checkout", "--", "index.html"])
+        return f"__BAD__{bad}"
     _git_setup()
     subprocess.run(["git", "add", "index.html"])
     subprocess.run(["git", "commit", "-m", msg])
-    return subprocess.run(["git", "push"], capture_output=True, text=True).returncode == 0
+    return "__OK__" if subprocess.run(["git", "push"], capture_output=True, text=True).returncode == 0 else "__PUSHFAIL__"
+
+def auto_heal():
+    """Als de gedeployde app-code kapot is: automatisch terug naar de vorige werkende versie."""
+    bad = js_broken()
+    if not bad:
+        return None
+    log = subprocess.run(["git", "log", "--format=%H", "-n", "2", "--", "index.html"],
+                         capture_output=True, text=True).stdout.split()
+    if len(log) < 2:
+        return f"app kapot ({bad}) maar geen vorige versie om terug te zetten"
+    prev = subprocess.run(["git", "show", f"{log[1]}:index.html"], capture_output=True).stdout
+    open("index.html", "wb").write(prev)
+    if js_broken():                            # vorige versie ook kapot? niet pushen
+        subprocess.run(["git", "checkout", "--", "index.html"])
+        return f"app kapot ({bad}) en vorige versie óók — handmatig nodig"
+    _git_setup()
+    subprocess.run(["git", "add", "index.html"])
+    subprocess.run(["git", "commit", "-m", "Auto-herstel: kapotte versie teruggezet naar vorige werkende"])
+    subprocess.run(["git", "push"], capture_output=True, text=True)
+    send(f"🛠️ Kapotte app-versie gedetecteerd en AUTOMATISCH teruggezet naar de vorige werkende versie.\nReden: {bad}")
+    return "hersteld"
 
 def find_bar(data, name):
     name = name.strip()
@@ -158,9 +197,8 @@ def cmd_set(arg):
     for t in b["tasks"]:
         if t["list"] == cat and t["material"].lower() == mat.lower(): t["qty"] = p[3]; hit = True
     if not hit: b["tasks"].append({"list": cat, "material": mat, "qty": p[3]})
-    ok = write_bars(h, i0, i1, data, f"Telefoon-edit: {b['loc']} {cat}/{mat}={p[3]}")
-    send(f"{'✅' if ok else '⚠️ push faalde:'} {b['loc']} → [{cat}] {mat} = {p[3]} "
-         f"{'(live over ~1 min)' if ok else ''}")
+    _wrep(write_bars(h, i0, i1, data, f"Telefoon-edit: {b['loc']} {cat}/{mat}={p[3]}"),
+          f"{b['loc']} → [{cat}] {mat} = {p[3]}")
 
 def cmd_rm(arg):
     p = [x.strip() for x in arg.split("|")]
@@ -174,9 +212,13 @@ def cmd_rm(arg):
     target = mm[0] if mm else next((m for m in mats if p[1].lower() in m.lower()), None)
     if not target: send(f"Materiaal '{p[1]}' niet op {b['loc']}. Aanwezig: {', '.join(mats)}"); return
     b["tasks"] = [t for t in b["tasks"] if t["material"] != target]
-    ok = write_bars(h, i0, i1, data, f"Telefoon-edit: {b['loc']} - {target} verwijderd")
-    send(f"{'✅' if ok else '⚠️ push faalde:'} {target} verwijderd van {b['loc']} "
-         f"{'(live over ~1 min)' if ok else ''}")
+    _wrep(write_bars(h, i0, i1, data, f"Telefoon-edit: {b['loc']} - {target} verwijderd"),
+          f"{target} verwijderd van {b['loc']}")
+
+def _wrep(r, okmsg):
+    if r == "__OK__":            send("✅ " + okmsg + "  (live over ~1 min)")
+    elif r.startswith("__BAD__"): send("⚠️ Niet doorgevoerd — zou de app kapotmaken: " + r[7:])
+    else:                        send("⚠️ Wijziging gemaakt maar push naar de server faalde.")
 
 def cmd_melding(arg):
     if not arg.strip(): send("Gebruik:  /melding <omschrijving>\nbijv:  /melding F14A klopt niet, mist afvalzakken"); return
@@ -241,5 +283,6 @@ def monitor(prev_status):
 if __name__ == "__main__":
     status, offset = state_doc()
     offset = process_commands(offset)
+    auto_heal()                     # kapotte versie? automatisch terugzetten
     status = monitor(status)
     save_state(status, offset)
