@@ -23,10 +23,13 @@ LIVE = "https://dgpverdeellijst.github.io/index.html"
 MAP  = "https://dgpverdeellijst.github.io/map.jpg"
 
 def http(url, method="GET", data=None, timeout=25):
-    req = urllib.request.Request(url, data=(json.dumps(data).encode() if data else None), method=method,
-                                 headers={"Content-Type": "application/json"})
+    # via curl -> werkt betrouwbaar op zowel de cloud-runner als lokaal (geen SSL-gedoe)
+    args = ["curl", "-s", "--max-time", str(timeout), "-X", method]
+    if data is not None:
+        args += ["-H", "Content-Type: application/json", "-d", json.dumps(data)]
+    args.append(url)
     try:
-        return urllib.request.urlopen(req, timeout=timeout).read().decode()
+        return subprocess.run(args, capture_output=True, text=True, timeout=timeout + 5).stdout
     except Exception as e:
         return f"__ERR__{e}"
 
