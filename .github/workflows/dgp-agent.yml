@@ -1,0 +1,29 @@
+name: DGP agent (monitor + telefoon-commando's)
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"      # elke ~10 min (GitHub kan iets vertragen)
+  workflow_dispatch:            # handmatig te starten (test)
+
+permissions:
+  contents: write               # nodig voor /rollback (push naar de repo)
+
+concurrency:
+  group: dgp-agent
+  cancel-in-progress: false
+
+jobs:
+  agent:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0        # volledige historie, nodig voor rollback
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run agent
+        env:
+          TG_TOKEN: ${{ secrets.TG_TOKEN }}
+          TG_CHAT: ${{ secrets.TG_CHAT }}
+        run: python3 ops/dgp_agent.py
